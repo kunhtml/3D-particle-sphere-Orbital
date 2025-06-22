@@ -1,0 +1,138 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8">
+  <title>Orbital Particles – Three.js (ImportMap)</title>
+  <style>
+    body{margin:0;overflow:hidden;background:#000}
+    canvas{display:block}
+  </style>
+  <!-- Import map để trình duyệt biết "three" là ở đâu -->
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "https://cdn.jsdelivr.net/npm/three@0.163/build/three.module.js",
+      "three/examples/jsm/": "https://cdn.jsdelivr.net/npm/three@0.163/examples/jsm/"
+    }
+  }
+  </script>
+</head>
+<body>
+<script type="module">
+import * as THREE from "three";
+import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
+import { EffectComposer } from "three/examples/jsm/postprocessing/EffectComposer.js";
+import { RenderPass } from "three/examples/jsm/postprocessing/RenderPass.js";
+import { UnrealBloomPass } from "three/examples/jsm/postprocessing/UnrealBloomPass.js";
+
+// ----- Scene & camera -----
+const scene = new THREE.Scene();
+const camera = new THREE.PerspectiveCamera(60, innerWidth / innerHeight, 0.1, 4000);
+camera.position.set(0, 120, 450);
+
+// ----- Renderer -----
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setSize(innerWidth, innerHeight);
+renderer.setPixelRatio(devicePixelRatio);
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+document.body.appendChild(renderer.domElement);
+
+// ----- Post‑processing (bloom) -----
+const composer = new EffectComposer(renderer);
+composer.addPass(new RenderPass(scene, camera));
+const bloomPass = new UnrealBloomPass(new THREE.Vector2(innerWidth, innerHeight), 1.2, 0.4, 0.85);
+bloomPass.threshold = 0;
+bloomPass.strength = 1.4;
+bloomPass.radius = 0.55;
+composer.addPass(bloomPass);
+
+// ----- Controls -----
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.enableDamping = true;
+
+// ----- Lights -----
+scene.add(new THREE.AmbientLight(0xffffff, 0.6));
+const dir = new THREE.DirectionalLight(0xffffff, 1.2);
+dir.position.set(200, 300, 150);
+scene.add(dir);
+
+// ----- Star‑field background -----
+const starGeo = new THREE.BufferGeometry();
+const STAR_COUNT = 2000;
+const starPositions = new Float32Array(STAR_COUNT * 3);
+for (let i = 0; i < STAR_COUNT; i++) {
+  const r = THREE.MathUtils.randFloat(800, 1900);
+  const theta = THREE.MathUtils.randFloat(0, Math.PI * 2);
+  const phi = THREE.MathUtils.randFloat(0, Math.PI);
+  starPositions[i * 3] = r * Math.sin(phi) * Math.cos(theta);
+  starPositions[i * 3 + 1] = r * Math.cos(phi);
+  starPositions[i * 3 + 2] = r * Math.sin(phi) * Math.sin(theta);
+}
+starGeo.setAttribute("position", new THREE.BufferAttribute(starPositions, 3));
+const starMat = new THREE.PointsMaterial({ color: 0xffffff, size: 2, sizeAttenuation: true });
+scene.add(new THREE.Points(starGeo, starMat));
+
+// ----- Central planet -----
+const planetTexture = new THREE.TextureLoader().load("https://threejs.org/examples/textures/planets/earth_atmos_2048.jpg");
+const planet = new THREE.Mesh(
+  new THREE.SphereGeometry(40, 64, 64),
+  new THREE.MeshStandardMaterial({ map: planetTexture, roughness: 0.7 })
+);
+scene.add(planet);
+
+// ----- Satellites via InstancedMesh -----
+const NUM_SATS = 400;
+const ORBIT_MIN = 160;
+const ORBIT_MAX = 260;
+const satGeo = new THREE.SphereGeometry(4, 8, 8);
+const satMat = new THREE.MeshBasicMaterial({ color: 0xffa500 });
+const satellites = new THREE.InstancedMesh(satGeo, satMat, NUM_SATS);
+scene.add(satellites);
+
+const dummy = new THREE.Object3D();
+const theta = new Float32Array(NUM_SATS);
+const vel = new Float32Array(NUM_SATS);
+const radius = new Float32Array(NUM_SATS);
+const inc = new Float32Array(NUM_SATS);
+
+for (let i = 0; i < NUM_SATS; i++) {
+  theta[i] = THREE.MathUtils.randFloat(0, Math.PI * 2);
+  vel[i] = THREE.MathUtils.randFloat(15, 45) * Math.PI / 180;   // rad/s
+  radius[i] = THREE.MathUtils.randFloat(ORBIT_MIN, ORBIT_MAX);
+  inc[i] = THREE.MathUtils.randFloat(-Math.PI / 6, Math.PI / 6); // inclination
+}
+
+// ----- Resize handling -----
+addEventListener("resize", () => {
+  camera.aspect = innerWidth / innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth, innerHeight);
+  composer.setSize(innerWidth, innerHeight);
+});
+
+// ----- Animation loop -----
+let last = performance.now();
+function animate(now) {
+  const dt = (now - last) / 1000;
+  last = now;
+
+  for (let i = 0; i < NUM_SATS; i++) {
+    theta[i] += vel[i] * dt;
+    dummy.position.set(
+      radius[i] * Math.cos(theta[i]),
+      radius[i] * Math.sin(inc[i]),
+      radius[i] * Math.sin(theta[i])
+    );
+    dummy.updateMatrix();
+    satellites.setMatrixAt(i, dummy.matrix);
+  }
+  satellites.instanceMatrix.needsUpdate = true;
+
+  controls.update();
+  composer.render();
+  requestAnimationFrame(animate);
+}
+requestAnimationFrame(animate);
+</script>
+</body>
+</html>
