@@ -2,12 +2,11 @@
 <html lang="vi">
 <head>
   <meta charset="UTF-8">
-  <title>3D Orbital Dance – Spherical Orbits</title>
+  <title>3D Orbital Dance – Minimal</title>
   <style>
     body{margin:0;overflow:hidden;background:#000}
     canvas{display:block}
   </style>
-  <!-- Import map để trình duyệt resolve "three" -->
   <script type="importmap">
   {
     "imports": {
@@ -23,125 +22,115 @@ import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import { EffectComposer } from "three/examples/jsm/postprocessing/EffectComposer.js";
 import { RenderPass } from "three/examples/jsm/postprocessing/RenderPass.js";
-import { UnrealBloomPass } from "three/examples/jsm/postprocessing/UnrealBloomPass.js";
 
-// ---------- Scene & camera ----------
 const scene = new THREE.Scene();
-const camera = new THREE.PerspectiveCamera(60, innerWidth/innerHeight, .1, 4000);
-camera.position.set(0, 120, 450);
+const camera = new THREE.PerspectiveCamera(60, innerWidth / innerHeight, 0.1, 4000);
+camera.position.set(0, 100, 520);
 
-// ---------- Renderer ----------
-const renderer = new THREE.WebGLRenderer({antialias:true});
+const renderer = new THREE.WebGLRenderer({ antialias: true });
 renderer.setSize(innerWidth, innerHeight);
 renderer.setPixelRatio(devicePixelRatio);
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.outputEncoding = THREE.sRGBEncoding;
 document.body.appendChild(renderer.domElement);
 
-// ---------- Post-processing (bloom) ----------
 const composer = new EffectComposer(renderer);
 composer.addPass(new RenderPass(scene, camera));
-const bloom = new UnrealBloomPass(new THREE.Vector2(innerWidth, innerHeight), 1.2, 0.4, 0.85);
-bloom.strength = 1.4;
-composer.addPass(bloom);
 
-// ---------- Controls ----------
 const controls = new OrbitControls(camera, renderer.domElement);
 controls.enableDamping = true;
 
-// ---------- Lights ----------
-scene.add(new THREE.AmbientLight(0xffffff, .6));
-const dir = new THREE.DirectionalLight(0xffffff, 1.2);
-dir.position.set(200, 300, 150);
-scene.add(dir);
+scene.add(new THREE.AmbientLight(0xffffff, 0.5));
 
-// ---------- Star‑field background ----------
+const STAR_COUNT = 2500;
+const starPos = new Float32Array(STAR_COUNT * 3);
+for (let i = 0; i < STAR_COUNT; i++) {
+  const r = THREE.MathUtils.randFloat(800, 1800);
+  const phi = THREE.MathUtils.randFloat(0, Math.PI);
+  const th = THREE.MathUtils.randFloat(0, Math.PI * 2);
+  starPos[i * 3] = r * Math.sin(phi) * Math.cos(th);
+  starPos[i * 3 + 1] = r * Math.cos(phi);
+  starPos[i * 3 + 2] = r * Math.sin(phi) * Math.sin(th);
+}
 const starGeo = new THREE.BufferGeometry();
-const STAR_COUNT = 2000;
-const starPos = new Float32Array(STAR_COUNT*3);
-for(let i=0;i<STAR_COUNT;i++){
-  const r = THREE.MathUtils.randFloat(800,1900);
-  const theta = THREE.MathUtils.randFloat(0,Math.PI*2);
-  const phi = THREE.MathUtils.randFloat(0,Math.PI);
-  starPos[i*3]   = r*Math.sin(phi)*Math.cos(theta);
-  starPos[i*3+1] = r*Math.cos(phi);
-  starPos[i*3+2] = r*Math.sin(phi)*Math.sin(theta);
-}
-starGeo.setAttribute('position', new THREE.BufferAttribute(starPos,3));
-scene.add(new THREE.Points(starGeo, new THREE.PointsMaterial({color:0xffffff,size:2,sizeAttenuation:true})));
-
-// ---------- Central planet ----------
-const planet = new THREE.Mesh(
-  new THREE.SphereGeometry(40,64,64),
-  new THREE.MeshStandardMaterial({map:new THREE.TextureLoader().load('https://threejs.org/examples/textures/planets/earth_atmos_2048.jpg'), roughness:.7})
+starGeo.setAttribute("position", new THREE.BufferAttribute(starPos, 3));
+scene.add(
+  new THREE.Points(
+    starGeo,
+    new THREE.PointsMaterial({ color: 0xffffff, size: 2, sizeAttenuation: true, opacity: 0.9, transparent: true })
+  )
 );
-scene.add(planet);
 
-// ---------- Satellites (spherical shell of independent circular orbits) ----------
-const NUM_SATS = 400;
-const ORBIT_MIN = 160;
-const ORBIT_MAX = 260;
-const satGeo = new THREE.SphereGeometry(4,8,8);
-const satMat = new THREE.MeshBasicMaterial({color:0xffa500});
-const sats = new THREE.InstancedMesh(satGeo, satMat, NUM_SATS);
-scene.add(sats);
+const PLANET_RADIUS = 100;
+const PT_PER_LAT = 210;
+const planetGeo = new THREE.BufferGeometry();
+const pos = [];
+const col = [];
+for (let lat = 0; lat <= 180; lat += 1) {
+  const th = THREE.MathUtils.degToRad(lat - 90);
+  const cos = Math.cos(th);
+  const sin = Math.sin(th);
+  const pts = Math.max(5, PT_PER_LAT * Math.cos((th * Math.PI) / 2 / Math.PI + 0.5));
+  for (let j = 0; j < pts; j++) {
+    const phi = THREE.MathUtils.randFloat(0, Math.PI * 2);
+    const x = PLANET_RADIUS * cos * Math.cos(phi);
+    const y = PLANET_RADIUS * sin;
+    const z = PLANET_RADIUS * cos * Math.sin(phi);
+    pos.push(x, y, z);
+    const h = 0.8 + (0.4 * y) / PLANET_RADIUS;
+    const color = new THREE.Color().setHSL(((h % 1) + 1) % 1, 1, 0.5);
+    col.push(color.r, color.g, color.b);
+  }
+}
+planetGeo.setAttribute("position", new THREE.Float32BufferAttribute(pos, 3));
+planetGeo.setAttribute("color", new THREE.Float32BufferAttribute(col, 3));
+const planetPts = new THREE.Points(
+  planetGeo,
+  new THREE.PointsMaterial({ size: 2, vertexColors: true, transparent: true, opacity: 0.7 })
+);
+scene.add(planetPts);
 
-const dummy = new THREE.Object3D();
-const thetaArr = new Float32Array(NUM_SATS);
-const velArr   = new Float32Array(NUM_SATS);
-const radiusArr= new Float32Array(NUM_SATS);
-const quatArr  = [];// store Quaternion per satellite
-
-const Y_AXIS = new THREE.Vector3(0,1,0);
-for(let i=0;i<NUM_SATS;i++){
-  thetaArr[i]  = THREE.MathUtils.randFloat(0, Math.PI*2);
-  velArr[i]    = THREE.MathUtils.randFloat(15,45)*Math.PI/180; // rad/s
-  radiusArr[i] = THREE.MathUtils.randFloat(ORBIT_MIN, ORBIT_MAX);
-
-  // Random orbit normal (unit vector)
-  let nx,ny,nz;
-  do{
-    nx = THREE.MathUtils.randFloatSpread(2);
-    ny = THREE.MathUtils.randFloatSpread(2);
-    nz = THREE.MathUtils.randFloatSpread(2);
-  } while(nx*nx+ny*ny+nz*nz < 0.01); // avoid near‑zero
-  const normal = new THREE.Vector3(nx,ny,nz).normalize();
-
-  // Quaternion that rotates base plane (normal Y_AXIS) onto "normal"
-  const q = new THREE.Quaternion().setFromUnitVectors(Y_AXIS, normal);
-  quatArr.push(q);
+function createSpiral(radius, tiltDeg, pointCount, turns, amp) {
+  const geo = new THREE.BufferGeometry();
+  const arr = new Float32Array(pointCount * 3);
+  for (let i = 0; i < pointCount; i++) {
+    const t = (i / pointCount) * Math.PI * 2 * turns;
+    const rNoise = THREE.MathUtils.randFloat(-12, 12);
+    const curR = radius + rNoise + (i / pointCount) * 8;
+    arr[i * 3] = curR * Math.cos(t);
+    arr[i * 3 + 1] = amp * Math.sin(t) + THREE.MathUtils.randFloatSpread(6);
+    arr[i * 3 + 2] = curR * Math.sin(t);
+  }
+  geo.setAttribute("position", new THREE.BufferAttribute(arr, 3));
+  const mat = new THREE.PointsMaterial({ size: 1.6, color: 0xffffff, transparent: true, opacity: 0.5, blending: THREE.NormalBlending, sizeAttenuation: true });
+  const spiral = new THREE.Points(geo, mat);
+  spiral.rotation.x = THREE.MathUtils.degToRad(tiltDeg);
+  return spiral;
 }
 
-// ---------- Resize ----------
-addEventListener('resize', ()=>{
-  camera.aspect = innerWidth/innerHeight;
-  camera.updateProjectionMatrix();
-  renderer.setSize(innerWidth, innerHeight);
-  composer.setSize(innerWidth, innerHeight);
-});
+const spiral1 = createSpiral(170, 18, 40000, 2.2, 10);
+const spiral2 = createSpiral(195, -22, 40000, 2.5, 12);
+scene.add(spiral1, spiral2);
 
-// ---------- Animation loop ----------
 let last = performance.now();
-const baseVec = new THREE.Vector3();
-function animate(now){
-  const dt = (now - last)/1000; last = now;
-
-  for(let i=0;i<NUM_SATS;i++){
-    thetaArr[i] += velArr[i]*dt;
-    // base vector on XZ plane (Y=0) before rotation
-    baseVec.set(Math.cos(thetaArr[i]), 0, Math.sin(thetaArr[i])).multiplyScalar(radiusArr[i]);
-    baseVec.applyQuaternion(quatArr[i]); // rotate into satellite's orbital plane
-
-    dummy.position.copy(baseVec);
-    dummy.updateMatrix();
-    sats.setMatrixAt(i, dummy.matrix);
-  }
-  sats.instanceMatrix.needsUpdate = true;
-
+function animate(now) {
+  const dt = (now - last) / 1000;
+  last = now;
+  spiral1.rotation.y += 0.06 * dt;
+  spiral2.rotation.y -= 0.05 * dt;
+  planetPts.rotation.y += 0.02 * dt;
   controls.update();
   composer.render();
   requestAnimationFrame(animate);
 }
 requestAnimationFrame(animate);
+
+addEventListener("resize", () => {
+  camera.aspect = innerWidth / innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth, innerHeight);
+  composer.setSize(innerWidth, innerHeight);
+});
 </script>
 </body>
 </html>
